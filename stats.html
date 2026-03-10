@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>통계 — 나만의 스케줄러</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #0e0e12; --surface: #16161e; --surface2: #1e1e2a;
+    --border: #2a2a3a; --accent: #7c6af7; --accent2: #f26abe;
+    --accent3: #4ecdc4; --text: #e8e8f0; --text-dim: #7a7a9a;
+    --red: #f26a6a; --yellow: #f2c86a; --green: #6af2a0; --gold: #f2d06a;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'Noto Sans KR',sans-serif; min-height:100vh; display:flex; flex-direction:column; }
+
+  header { padding:20px 32px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); background:var(--surface); position:sticky; top:0; z-index:100; }
+  .logo { font-family:'DM Mono',monospace; font-size:1.1rem; color:var(--accent); }
+  .logo span { color:var(--accent2); }
+  .back-btn { background:none; border:1px solid var(--border); border-radius:8px; padding:6px 14px; color:var(--text-dim); font-size:0.82rem; cursor:pointer; font-family:'Noto Sans KR',sans-serif; transition:all 0.15s; text-decoration:none; display:flex; align-items:center; gap:6px; }
+  .back-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+  .page { flex:1; padding:32px; max-width:1100px; margin:0 auto; width:100%; display:flex; flex-direction:column; gap:28px; }
+
+  /* period selector */
+  .period-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .period-btn { background:none; border:1px solid var(--border); border-radius:20px; padding:6px 16px; color:var(--text-dim); font-size:0.82rem; cursor:pointer; font-family:'Noto Sans KR',sans-serif; transition:all 0.15s; }
+  .period-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .period-btn.active { background:var(--accent); border-color:var(--accent); color:white; }
+  .period-label { font-family:'DM Mono',monospace; font-size:0.78rem; color:var(--text-dim); margin-left:auto; }
+
+  /* summary cards */
+  .summary-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+  .summary-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:20px; display:flex; flex-direction:column; gap:6px; }
+  .sc-label { font-size:0.75rem; color:var(--text-dim); }
+  .sc-value { font-family:'DM Mono',monospace; font-size:2rem; font-weight:500; }
+  .sc-sub { font-size:0.72rem; color:var(--text-dim); }
+  .sc-value.accent { color:var(--accent); }
+  .sc-value.green  { color:var(--green); }
+  .sc-value.gold   { color:var(--gold); }
+  .sc-value.pink   { color:var(--accent2); }
+
+  /* section */
+  .section { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:24px; display:flex; flex-direction:column; gap:18px; }
+  .section-title { font-size:0.9rem; font-weight:500; display:flex; align-items:center; gap:8px; }
+  .section-title span { font-family:'DM Mono',monospace; font-size:0.72rem; color:var(--text-dim); font-weight:400; }
+
+  /* bar chart */
+  .bar-chart { display:flex; flex-direction:column; gap:10px; }
+  .bar-row { display:flex; align-items:center; gap:12px; }
+  .bar-label { font-family:'DM Mono',monospace; font-size:0.72rem; color:var(--text-dim); width:52px; flex-shrink:0; text-align:right; }
+  .bar-track { flex:1; height:28px; background:var(--surface2); border-radius:6px; overflow:hidden; position:relative; }
+  .bar-fill { height:100%; border-radius:6px; transition:width 0.8s cubic-bezier(0.4,0,0.2,1); display:flex; align-items:center; padding:0 10px; min-width:2px; }
+  .bar-fill-text { font-family:'DM Mono',monospace; font-size:0.7rem; color:white; white-space:nowrap; opacity:0.9; }
+  .bar-pct { font-family:'DM Mono',monospace; font-size:0.72rem; color:var(--text-dim); width:40px; flex-shrink:0; }
+
+  /* trend chart (simple SVG) */
+  .trend-wrap { width:100%; overflow:hidden; position:relative; }
+  .trend-svg { width:100%; display:block; }
+
+  /* donut */
+  .donut-section { display:flex; gap:24px; align-items:center; }
+  .donut-wrap { position:relative; width:140px; height:140px; flex-shrink:0; }
+  .donut-svg { width:140px; height:140px; transform:rotate(-90deg); }
+  .donut-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .donut-pct { font-family:'DM Mono',monospace; font-size:1.4rem; font-weight:500; color:var(--text); }
+  .donut-sub { font-size:0.65rem; color:var(--text-dim); margin-top:2px; }
+  .donut-legend { display:flex; flex-direction:column; gap:8px; flex:1; }
+  .dl-item { display:flex; align-items:center; gap:8px; font-size:0.8rem; }
+  .dl-dot { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
+  .dl-val { font-family:'DM Mono',monospace; font-size:0.78rem; color:var(--text-dim); margin-left:auto; }
+
+  /* gratitude heatmap */
+  .heatmap { display:flex; flex-direction:column; gap:4px; }
+  .hm-row { display:flex; gap:3px; align-items:center; }
+  .hm-day-label { font-family:'DM Mono',monospace; font-size:0.6rem; color:var(--text-dim); width:20px; }
+  .hm-cell { width:14px; height:14px; border-radius:3px; background:var(--surface2); transition:background 0.2s; cursor:default; position:relative; }
+  .hm-cell:hover::after { content:attr(data-tip); position:absolute; bottom:18px; left:50%; transform:translateX(-50%); background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:4px 8px; font-size:0.68rem; white-space:nowrap; z-index:10; color:var(--text); font-family:'DM Mono',monospace; }
+  .hm-cell.g0 { background:var(--surface2); }
+  .hm-cell.g1 { background:rgba(242,208,106,0.3); }
+  .hm-cell.g2 { background:rgba(242,208,106,0.6); }
+  .hm-cell.g3 { background:var(--gold); }
+  .hm-months { display:flex; gap:3px; padding-left:24px; margin-bottom:2px; }
+  .hm-month { font-family:'DM Mono',monospace; font-size:0.6rem; color:var(--text-dim); }
+
+  /* loading */
+  .loading { display:flex; align-items:center; justify-content:center; padding:60px; gap:10px; color:var(--text-dim); font-size:0.9rem; }
+  .spinner { width:16px; height:16px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 0.6s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+
+  @media (max-width:700px) {
+    .summary-grid { grid-template-columns:repeat(2,1fr); }
+    .page { padding:16px; gap:16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">my<span>//</span>scheduler <span style="font-size:0.8rem;color:var(--text-dim);margin-left:6px;">/ 통계</span></div>
+  <a class="back-btn" href="index.html">← 돌아가기</a>
+</header>
+
+<div class="page" id="page">
+  <div class="loading"><div class="spinner"></div> 데이터 불러오는 중...</div>
+</div>
+
+<script>
+// ╔══════════════════════════════════════════╗
+// ║  🔑 여기만 수정하세요 (2줄)               ║
+// ╚══════════════════════════════════════════╝
+const SUPABASE_URL = 'https://pflydceqgauaaoybkgxz.supabase.co';   // ← 여기
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmbHlkY2VxZ2F1YWFveWJrZ3h6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2NTkxMDksImV4cCI6MjA4ODIzNTEwOX0.xhA8KRBAy04-PhPa-uJanGCfFC79aKMVFpOofAqO8Fc';   // ← 여기
+
+// ════════════════════════════════════════════
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentPeriod = 3; // months
+let allTasks = [];
+let allGratitudes = [];
+
+const COLORS = ['#7c6af7','#f26abe','#4ecdc4','#f2c86a','#f26a6a','#6af2a0'];
+
+// ── INIT ─────────────────────────────────────
+(async function init() {
+  await loadAll();
+  renderPage();
+})();
+
+async function loadAll() {
+  const [t, g] = await Promise.all([
+    sb.from('tasks').select('*').order('date'),
+    sb.from('gratitudes').select('*').order('date')
+  ]);
+  allTasks      = t.data || [];
+  allGratitudes = g.data || [];
+}
+
+// ── RENDER PAGE ──────────────────────────────
+function renderPage() {
+  const page = document.getElementById('page');
+  page.innerHTML = '';
+
+  // period bar
+  const periodBar = document.createElement('div');
+  periodBar.className = 'period-bar';
+  periodBar.innerHTML = `
+    <button class="period-btn ${currentPeriod===1?'active':''}" data-m="1">1개월</button>
+    <button class="period-btn ${currentPeriod===3?'active':''}" data-m="3">3개월</button>
+    <button class="period-btn ${currentPeriod===6?'active':''}" data-m="6">6개월</button>
+    <button class="period-btn ${currentPeriod===12?'active':''}" data-m="12">1년</button>
+    <span class="period-label" id="periodLabel"></span>`;
+  periodBar.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentPeriod = parseInt(btn.dataset.m);
+      renderPage();
+    });
+  });
+  page.appendChild(periodBar);
+
+  const { tasks, gratitudes, months } = filterByPeriod(currentPeriod);
+
+  // period label
+  const from = months[0], to = months[months.length-1];
+  periodBar.querySelector('#periodLabel').textContent = `${from} ~ ${to}`;
+
+  // summary cards
+  const total  = tasks.length;
+  const done   = tasks.filter(t=>t.done).length;
+  const rate   = total > 0 ? Math.round(done/total*100) : 0;
+  const gDays  = new Set(gratitudes.map(g=>g.date)).size;
+  const streak = calcStreak();
+
+  const grid = document.createElement('div');
+  grid.className = 'summary-grid';
+  grid.innerHTML = `
+    <div class="summary-card">
+      <span class="sc-label">전체 일정</span>
+      <span class="sc-value accent">${total}</span>
+      <span class="sc-sub">기간 내 등록된 일정</span>
+    </div>
+    <div class="summary-card">
+      <span class="sc-label">완료율</span>
+      <span class="sc-value green">${rate}%</span>
+      <span class="sc-sub">${done}개 완료 / ${total-done}개 남음</span>
+    </div>
+    <div class="summary-card">
+      <span class="sc-label">감사일기</span>
+      <span class="sc-value gold">${gDays}일</span>
+      <span class="sc-sub">작성한 날 수</span>
+    </div>
+    <div class="summary-card">
+      <span class="sc-label">연속 기록</span>
+      <span class="sc-value pink">${streak}일</span>
+      <span class="sc-sub">감사일기 스트릭</span>
+    </div>`;
+  page.appendChild(grid);
+
+  // 월별 완료율 bar chart
+  const monthlySection = document.createElement('div');
+  monthlySection.className = 'section';
+  monthlySection.innerHTML = `<div class="section-title">📅 월별 완료율 <span>월별 등록/완료 현황</span></div>`;
+  const barChart = document.createElement('div');
+  barChart.className = 'bar-chart';
+  months.forEach(m => {
+    const mTasks = allTasks.filter(t => t.date.startsWith(m));
+    const mDone  = mTasks.filter(t => t.done).length;
+    const mTotal = mTasks.length;
+    const mRate  = mTotal > 0 ? Math.round(mDone/mTotal*100) : 0;
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+    row.innerHTML = `
+      <span class="bar-label">${m.slice(5)}월</span>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${mRate}%;background:var(--accent);">
+          ${mRate>15?`<span class="bar-fill-text">${mDone}/${mTotal}</span>`:''}
+        </div>
+      </div>
+      <span class="bar-pct">${mRate}%</span>`;
+    barChart.appendChild(row);
+  });
+  monthlySection.appendChild(barChart);
+  page.appendChild(monthlySection);
+
+  // 기간별 일정 추이 (line chart SVG)
+  const trendSection = document.createElement('div');
+  trendSection.className = 'section';
+  trendSection.innerHTML = `<div class="section-title">📈 기간별 일정 추이 <span>월별 등록 vs 완료</span></div>`;
+  trendSection.appendChild(buildTrendChart(months));
+  page.appendChild(trendSection);
+
+  // 우선순위 분포 donut
+  const priSection = document.createElement('div');
+  priSection.className = 'section';
+  priSection.innerHTML = `<div class="section-title">🎯 우선순위 분포 <span>기간 내 일정</span></div>`;
+  const high = tasks.filter(t=>t.priority==='high').length;
+  const mid  = tasks.filter(t=>t.priority==='mid').length;
+  const low  = tasks.filter(t=>t.priority==='low').length;
+  priSection.appendChild(buildDonut([
+    { label:'🔴 높음', value:high, color:'#f26a6a' },
+    { label:'🟡 보통', value:mid,  color:'#f2c86a' },
+    { label:'🟢 낮음', value:low,  color:'#4ecdc4' },
+  ], total));
+  page.appendChild(priSection);
+
+  // 감사일기 히트맵
+  const hmSection = document.createElement('div');
+  hmSection.className = 'section';
+  hmSection.innerHTML = `<div class="section-title">🌿 감사일기 작성 현황 <span>최근 16주</span></div>`;
+  hmSection.appendChild(buildHeatmap());
+  page.appendChild(hmSection);
+}
+
+// ── FILTER ───────────────────────────────────
+function filterByPeriod(months) {
+  const now = new Date();
+  const result = [];
+  for (let i=months-1; i>=0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    result.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+  }
+  const from = result[0] + '-01';
+  const tasks      = allTasks.filter(t => t.date >= from);
+  const gratitudes = allGratitudes.filter(g => g.date >= from);
+  return { tasks, gratitudes, months: result };
+}
+
+// ── TREND CHART ──────────────────────────────
+function buildTrendChart(months) {
+  const W = 600, H = 160, PAD = { t:16, r:16, b:30, l:40 };
+  const data = months.map(m => ({
+    m,
+    total: allTasks.filter(t=>t.date.startsWith(m)).length,
+    done:  allTasks.filter(t=>t.date.startsWith(m)&&t.done).length,
+  }));
+  const maxVal = Math.max(...data.map(d=>d.total), 1);
+  const xStep  = (W - PAD.l - PAD.r) / Math.max(data.length-1, 1);
+  const yScale = (v) => PAD.t + (H - PAD.t - PAD.b) * (1 - v/maxVal);
+  const xPos   = (i) => PAD.l + i * xStep;
+
+  const totalPath = data.map((d,i)=>`${i===0?'M':'L'}${xPos(i).toFixed(1)},${yScale(d.total).toFixed(1)}`).join(' ');
+  const donePath  = data.map((d,i)=>`${i===0?'M':'L'}${xPos(i).toFixed(1)},${yScale(d.done).toFixed(1)}`).join(' ');
+
+  // y gridlines
+  const gridLines = [0,0.25,0.5,0.75,1].map(r => {
+    const y = yScale(maxVal*r).toFixed(1);
+    return `<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="#2a2a3a" stroke-width="1"/>
+            <text x="${PAD.l-6}" y="${parseFloat(y)+4}" fill="#7a7a9a" font-size="9" text-anchor="end" font-family="DM Mono,monospace">${Math.round(maxVal*r)}</text>`;
+  }).join('');
+
+  // x labels
+  const xLabels = data.map((d,i) =>
+    `<text x="${xPos(i).toFixed(1)}" y="${H-6}" fill="#7a7a9a" font-size="9" text-anchor="middle" font-family="DM Mono,monospace">${d.m.slice(5)}월</text>`
+  ).join('');
+
+  // dots
+  const totalDots = data.map((d,i) =>
+    `<circle cx="${xPos(i).toFixed(1)}" cy="${yScale(d.total).toFixed(1)}" r="3.5" fill="#7c6af7"/>`
+  ).join('');
+  const doneDots = data.map((d,i) =>
+    `<circle cx="${xPos(i).toFixed(1)}" cy="${yScale(d.done).toFixed(1)}" r="3.5" fill="#6af2a0"/>`
+  ).join('');
+
+  const wrap = document.createElement('div');
+  wrap.className = 'trend-wrap';
+  wrap.innerHTML = `
+    <svg class="trend-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+      ${gridLines}
+      ${xLabels}
+      <path d="${totalPath}" fill="none" stroke="#7c6af7" stroke-width="2" stroke-linejoin="round"/>
+      <path d="${donePath}"  fill="none" stroke="#6af2a0" stroke-width="2" stroke-linejoin="round" stroke-dasharray="4,2"/>
+      ${totalDots}
+      ${doneDots}
+    </svg>
+    <div style="display:flex;gap:16px;margin-top:8px;">
+      <div style="display:flex;align-items:center;gap:6px;font-size:0.75rem;color:var(--text-dim);">
+        <div style="width:16px;height:2px;background:#7c6af7;border-radius:1px;"></div> 전체 등록
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:0.75rem;color:var(--text-dim);">
+        <div style="width:16px;height:2px;background:#6af2a0;border-radius:1px;border-bottom:2px dashed #6af2a0;"></div> 완료
+      </div>
+    </div>`;
+  return wrap;
+}
+
+// ── DONUT ────────────────────────────────────
+function buildDonut(items, total) {
+  const R = 54, CX = 70, CY = 70, STROKE = 18;
+  const circ = 2 * Math.PI * R;
+  let offset = 0;
+  const slices = items.map(item => {
+    const pct = total > 0 ? item.value / total : 0;
+    const dash = pct * circ;
+    const slice = `<circle cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="${item.color}" stroke-width="${STROKE}" stroke-dasharray="${dash.toFixed(2)} ${(circ-dash).toFixed(2)}" stroke-dashoffset="${-offset.toFixed(2)}" opacity="0.85"/>`;
+    offset += dash;
+    return slice;
+  }).join('');
+
+  const doneRate = total > 0 ? Math.round(items[0].value/total*100) : 0;
+  const wrap = document.createElement('div');
+  wrap.className = 'donut-section';
+
+  const legend = items.map(item => `
+    <div class="dl-item">
+      <div class="dl-dot" style="background:${item.color}"></div>
+      <span>${item.label}</span>
+      <span class="dl-val">${item.value}개</span>
+    </div>`).join('');
+
+  wrap.innerHTML = `
+    <div class="donut-wrap">
+      <svg class="donut-svg" viewBox="0 0 140 140">
+        <circle cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="#1e1e2a" stroke-width="${STROKE}"/>
+        ${total > 0 ? slices : ''}
+      </svg>
+      <div class="donut-center">
+        <span class="donut-pct">${total}</span>
+        <span class="donut-sub">전체</span>
+      </div>
+    </div>
+    <div class="donut-legend">${legend}</div>`;
+  return wrap;
+}
+
+// ── HEATMAP ──────────────────────────────────
+function buildHeatmap() {
+  const WEEKS = 16;
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(start.getDate() - (WEEKS * 7 - 1));
+
+  const gMap = {};
+  allGratitudes.forEach(g => {
+    if (!gMap[g.date]) gMap[g.date] = 0;
+    gMap[g.date]++;
+  });
+
+  const wrap = document.createElement('div');
+  const days = ['일','월','화','수','목','금','토'];
+
+  // month labels row
+  const monthRow = document.createElement('div');
+  monthRow.className = 'hm-months';
+  let lastMonth = -1;
+  const monthCells = [];
+  for (let w=0; w<WEEKS; w++) {
+    const d = new Date(start); d.setDate(d.getDate() + w*7);
+    const m = d.getMonth();
+    monthCells.push(m !== lastMonth ? `<span class="hm-month" style="width:${14*7+3*6}px">${m+1}월</span>` : '');
+    lastMonth = m;
+  }
+
+  // grid: 7 rows (days) x WEEKS cols
+  const grid = document.createElement('div');
+  grid.className = 'heatmap';
+
+  for (let dow=0; dow<7; dow++) {
+    const row = document.createElement('div');
+    row.className = 'hm-row';
+    const lbl = document.createElement('span');
+    lbl.className = 'hm-day-label';
+    lbl.textContent = [1,3,5].includes(dow) ? days[dow] : '';
+    row.appendChild(lbl);
+
+    for (let w=0; w<WEEKS; w++) {
+      const d = new Date(start); d.setDate(d.getDate() + w*7 + dow);
+      if (d > today) { const ph=document.createElement('div'); ph.style.width='14px'; row.appendChild(ph); continue; }
+      const key = d.toISOString().slice(0,10);
+      const cnt = gMap[key] || 0;
+      const cell = document.createElement('div');
+      cell.className = `hm-cell g${Math.min(cnt, 3)}`;
+      cell.dataset.tip = `${key} · ${cnt}개`;
+      row.appendChild(cell);
+    }
+    grid.appendChild(row);
+  }
+
+  wrap.appendChild(grid);
+
+  // legend
+  const leg = document.createElement('div');
+  leg.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:12px;font-size:0.7rem;color:var(--text-dim);';
+  leg.innerHTML = `없음 <div class="hm-cell g0" style="display:inline-block"></div><div class="hm-cell g1" style="display:inline-block"></div><div class="hm-cell g2" style="display:inline-block"></div><div class="hm-cell g3" style="display:inline-block"></div> 3개`;
+  wrap.appendChild(leg);
+
+  return wrap;
+}
+
+// ── STREAK ───────────────────────────────────
+function calcStreak() {
+  const gMap = new Set(allGratitudes.map(g=>g.date));
+  let streak = 0;
+  const d = new Date();
+  while (true) {
+    const k = d.toISOString().slice(0,10);
+    if (gMap.has(k)) { streak++; d.setDate(d.getDate()-1); }
+    else break;
+  }
+  return streak;
+}
+</script>
+</body>
+</html>
