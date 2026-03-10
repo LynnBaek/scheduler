@@ -614,13 +614,9 @@ async function initApp() {
 
 // ── CARRY OVER 미완료 일정 ────────────────────
 async function carryOverIncompleteTasks() {
-  // 오늘 이미 이월한 적 있으면 스킵 (중복 방지)
   const lastCarry = localStorage.getItem('lastCarryDate');
   if (lastCarry === todayKey) return;
 
-  setSyncState('syncing', '미완료 이월 중');
-
-  // 오늘 이전의 미완료 일정 조회 (기간 일정 제외)
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayKey = yesterday.toISOString().slice(0, 10);
@@ -631,16 +627,15 @@ async function carryOverIncompleteTasks() {
     .is('range_id', null)
     .eq('user_id', currentUser.id);
 
-  if (error) { console.error(error); return; }
-  if (!data || data.length === 0) {
+  // 에러든 데이터 없든 오늘 날짜 기록하고 종료
+  if (error || !data || data.length === 0) {
     localStorage.setItem('lastCarryDate', todayKey);
+    setSyncState('synced', '동기화됨');
     return;
   }
 
-  // 오늘 날짜에 이미 같은 제목이 있는지 확인 (중복 방지)
   const todayTasks = tasks[todayKey] || [];
   const todayTitles = new Set(todayTasks.map(t => t.title));
-
   const toInsert = data
     .filter(t => !todayTitles.has(t.title))
     .map(t => ({
@@ -653,24 +648,24 @@ async function carryOverIncompleteTasks() {
       user_id: currentUser.id
     }));
 
+  localStorage.setItem('lastCarryDate', todayKey);
+
   if (toInsert.length === 0) {
-    localStorage.setItem('lastCarryDate', todayKey);
     setSyncState('synced', '동기화됨');
     return;
   }
 
+  setSyncState('syncing', '미완료 이월 중');
   const { data: inserted, error: insertErr } = await sb.from('tasks')
     .insert(toInsert).select();
 
-  if (insertErr) { console.error(insertErr); return; }
+  if (insertErr) { console.error(insertErr); setSyncState('synced', '동기화됨'); return; }
 
-  // 로컬 state 업데이트
   inserted.forEach(t => {
     if (!tasks[t.date]) tasks[t.date] = [];
     tasks[t.date].push(t);
   });
 
-  localStorage.setItem('lastCarryDate', todayKey);
   setSyncState('synced', `${inserted.length}개 이월됨`);
   setTimeout(() => setSyncState('synced', '동기화됨'), 2500);
   renderCalendar(); renderTasks(); updateStats();
