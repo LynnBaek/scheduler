@@ -74,7 +74,33 @@
   .syncing .sync-dot { animation:blink 0.8s infinite; }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
 
-  main { flex:1; display:grid; grid-template-columns:280px 1fr 300px; height:calc(100vh - 65px); overflow:hidden; }
+  main { flex:1; display:grid; grid-template-columns:280px 1fr 5px var(--gratitude-width, 300px); height:calc(100vh - 65px); overflow:hidden; }
+
+  /* ── GRATITUDE RESIZE HANDLE ── */
+  .gratitude-resize-handle {
+    width:5px;
+    cursor:col-resize;
+    background:transparent;
+    flex-shrink:0;
+    transition:background 0.15s;
+    position:relative;
+    z-index:10;
+  }
+  .gratitude-resize-handle:hover,
+  .gratitude-resize-handle.dragging {
+    background:var(--accent);
+  }
+  .gratitude-resize-handle::after {
+    content:'';
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    width:1px;
+    height:40px;
+    background:var(--border);
+    border-radius:1px;
+  }
 
   /* ── LEFT: CALENDAR SIDEBAR ── */
   aside { background:var(--surface); border-right:1px solid var(--border); padding:24px; display:flex; flex-direction:column; gap:24px; overflow-y:auto; }
@@ -425,10 +451,11 @@
   </div>
 
   <!-- RIGHT: 감사일기 -->
+  <div class="gratitude-resize-handle" id="gratitudeResizeHandle"></div>
   <div class="gratitude-panel">
     <div class="gratitude-header">
       <div class="gratitude-title">🌿 감사일기</div>
-      <div class="gratitude-subtitle">오늘 감사한 것 3가지</div>
+      <div class="gratitude-subtitle">오늘 감사한 것들 (제한 없음)</div>
       <div class="gratitude-date" id="gratitudeDate"></div>
     </div>
     <div class="gratitude-add-area">
@@ -784,7 +811,6 @@ async function addGratitude() {
   const text = input.value.trim();
   if (!text) return;
   const dayG = gratitudes[selectedDate] || [];
-  if (dayG.length >= 3) return;
   document.getElementById('gratitudeAddBtn').disabled = true;
   setSyncState('syncing', '저장 중');
   const { data, error } = await sb.from('gratitudes')
@@ -832,27 +858,17 @@ function renderGratitudeList() {
     return;
   }
 
-  const emojis = ['🌟','✨','💫'];
+  const emojis = ['🌟','✨','💫','🌈','🍀','🌸','💎','🌺','🦋','🌙','☀️','🌻','🎶','💐','🌿','🍃','🕊️','🌊','🎯','💡'];
   dayG.forEach((g, i) => {
     const item = document.createElement('div');
     item.className = 'gratitude-item';
     item.innerHTML = `
-      <span class="gratitude-num">${emojis[i]||'•'}</span>
+      <span class="gratitude-num">${emojis[i % emojis.length]}</span>
       <span class="gratitude-text">${escHtml(g.text)}</span>
       <button class="gratitude-del" title="삭제">✕</button>`;
     item.querySelector('.gratitude-del').addEventListener('click', () => deleteGratitude(g.id));
     list.appendChild(item);
   });
-
-  // 남은 슬롯 표시
-  for (let i=dayG.length; i<3; i++) {
-    const slot = document.createElement('div');
-    slot.className = 'gratitude-item';
-    slot.style.opacity = '0.3';
-    slot.style.borderLeftColor = 'var(--border)';
-    slot.innerHTML = `<span class="gratitude-num" style="opacity:0.4">${emojis[i]}</span><span class="gratitude-text" style="color:var(--text-dim);font-size:0.78rem;">감사한 것 ${i+1}번째...</span>`;
-    list.appendChild(slot);
-  }
 }
 
 function calcStreak() {
@@ -963,6 +979,43 @@ function updateStats() {
   document.getElementById('statDone').textContent=done;
   document.getElementById('statLeft').textContent=all.length-done;
 }
+
+// ── GRATITUDE PANEL RESIZE ───────────────────
+(function initGratitudeResize() {
+  const handle = document.getElementById('gratitudeResizeHandle');
+  const mainEl = document.querySelector('main');
+  const MIN_WIDTH = 200;
+  const MAX_WIDTH = 700;
+  let dragging = false;
+  let startX = 0;
+  let startWidth = 300;
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    startX = e.clientX;
+    const computed = getComputedStyle(mainEl).getPropertyValue('--gratitude-width');
+    startWidth = parseInt(computed) || 300;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta = startX - e.clientX;
+    const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta));
+    mainEl.style.setProperty('--gratitude-width', newWidth + 'px');
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
 </script>
 </body>
 </html>
